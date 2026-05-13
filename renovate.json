@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "dependencyDashboard": true,
+  "flux": {
+    "enabled": true,
+    "managerFilePatterns": [
+      "/(?:^|/)gotk-components\\.ya?ml$/",
+      "/(?:^|/)(apps|clusters|infrastructure)/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(?:^|/)(apps|clusters|infrastructure)/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)\\s+image:\\s*[^:]+:(?<currentValue>[^\\s]+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["flux"],
+      "matchDatasources": ["helm"],
+      "groupName": null,
+      "separateMinorPatch": true,
+      "separateMajorMinor": true
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "groupName": null,
+      "separateMinorPatch": true,
+      "separateMajorMinor": true
+    },
+    {
+      "matchManagers": ["terraform"],
+      "enabled": false
+    }
+  ]
+}

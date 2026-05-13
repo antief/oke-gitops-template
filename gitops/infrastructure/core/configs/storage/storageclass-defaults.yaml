@@ -1,0 +1,11 @@
+# gitops/infrastructure/core/configs/storage/storageclass-defaults.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: oci-bv
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: blockvolume.csi.oraclecloud.com
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

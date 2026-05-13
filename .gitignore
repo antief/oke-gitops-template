@@ -1,0 +1,45 @@
+# OpenTofu / Terraform local data
+**/.terraform/**
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local configuration generated from .env
+.env
+.envrc
+terraform/.envrc
+terraform/**/backend.hcl
+terraform/**/terraform.tfvars
+terraform/**/*.auto.tfvars
+
+# Local secrets and credentials
+*.pem
+*.key
+*kubeconfig*
+kubeconfig
+.oci/
+.kube/
+.direnv/
+
+# Local node replacement runtime state
+**/.oke-node-replace/
+
+# Generated patch/archive files
+*.patch
+*.diff
+*.zip
+*.tar
+*.gz
+*.tgz
+*.xz
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
