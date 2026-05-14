@@ -207,3 +207,44 @@ _wait-loadbalancers-gone:
     echo "Timed out waiting for LoadBalancer Services to disappear before OKE destroy" >&2; \
     kubectl get svc -A --field-selector spec.type=LoadBalancer >&2 || true; \
     exit 1'
+
+pr branch msg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    branch='{{branch}}'
+    msg='{{msg}}'
+
+    if ! command -v gh >/dev/null 2>&1; then
+      echo "GitHub CLI 'gh' is required." >&2
+      exit 1
+    fi
+
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "GitHub CLI is not authenticated. Run: gh auth login" >&2
+      exit 1
+    fi
+
+    current_branch="$(git branch --show-current)"
+
+    if [ "$current_branch" = "main" ]; then
+      git switch -c "$branch"
+    elif [ "$current_branch" != "$branch" ]; then
+      echo "Current branch is '$current_branch', expected 'main' or '$branch'." >&2
+      exit 1
+    fi
+
+    if git diff --quiet && git diff --cached --quiet; then
+      echo "No changes to commit." >&2
+      exit 1
+    fi
+
+    git add -A
+    git commit -m "$msg"
+    git push -u origin HEAD
+
+    if ! gh pr view >/dev/null 2>&1; then
+      gh pr create --fill --base main
+    fi
+
+    gh pr merge --auto --squash --delete-branch
