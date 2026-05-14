@@ -29,6 +29,7 @@ Install:
 - `flux`
 - `just`
 - `direnv`
+- `gh` for the optional pull request helper
 
 Configure OCI CLI:
 
@@ -81,6 +82,16 @@ just rebuild    # destroy + apply
 ```
 
 Use `just destroy` for rebuild testing. Use [Full uninstall](docs/uninstall.md) only when you want to remove everything, including Vault, KMS, and state.
+
+## Development workflow
+
+For repositories with branch protection enabled, use the pull request helper after making a change:
+
+```bash
+just pr my-change "docs: describe my change"
+```
+
+The helper creates a branch if needed, commits current changes, opens a pull request, and enables auto-merge. It requires the GitHub CLI (`gh`) to be installed and authenticated.
 
 ## Repository layout
 

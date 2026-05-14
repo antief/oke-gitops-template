@@ -46,7 +46,25 @@ Use [uninstall.md](uninstall.md) for full cleanup.
 
 ## GitOps changes
 
-For changes under `gitops/`:
+OpenTofu is not needed for normal GitOps changes. Commit the change to the repository watched by Flux and reconcile Flux if you want to apply it immediately.
+
+If the repository uses branch protection, make the change and use the pull request helper:
+
+```bash
+just pr update-gitops "update gitops"
+```
+
+The helper creates a branch when run from `main`, commits current changes, opens a pull request, and enables auto-merge. It requires the GitHub CLI (`gh`) to be installed and authenticated.
+
+After the pull request has merged, reconcile Flux if you do not want to wait for the normal reconciliation interval:
+
+```bash
+git switch main
+git pull
+flux reconcile source git flux-system -n flux-system
+```
+
+If the repository does not use branch protection, a direct commit and push also works:
 
 ```bash
 git add gitops/...
@@ -54,8 +72,6 @@ git commit -m "update gitops"
 git push
 flux reconcile source git flux-system -n flux-system
 ```
-
-OpenTofu is not needed for normal GitOps changes.
 
 ## Infrastructure changes
 
