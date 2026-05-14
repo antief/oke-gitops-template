@@ -1,0 +1,98 @@
+name: validate
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml
+
+      - name: Check YAML syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+          import yaml
+
+          skipped_dirs = {
+              ".git",
+              ".terraform",
+              "node_modules",
+              "vendor",
+          }
+
+          files = [
+              path for path in Path(".").rglob("*")
+              if path.suffix.lower() in {".yaml", ".yml"}
+              and not any(part in skipped_dirs for part in path.parts)
+          ]
+
+          errors = []
+
+          for path in files:
+              try:
+                  with path.open("r", encoding="utf-8") as handle:
+                      list(yaml.safe_load_all(handle))
+              except Exception as exc:
+                  errors.append(f"{path}: {exc}")
+
+          if errors:
+              print("YAML syntax errors found:")
+              for error in errors:
+                  print(f"  - {error}")
+              sys.exit(1)
+
+          print(f"Checked {len(files)} YAML files successfully.")
+          PY
+
+      - name: Check JSON syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import sys
+
+          skipped_dirs = {
+              ".git",
+              ".terraform",
+              "node_modules",
+              "vendor",
+          }
+
+          files = [
+              path for path in Path(".").rglob("*.json")
+              if not any(part in skipped_dirs for part in path.parts)
+          ]
+
+          errors = []
+
+          for path in files:
+              try:
+                  with path.open("r", encoding="utf-8") as handle:
+                      json.load(handle)
+              except Exception as exc:
+                  errors.append(f"{path}: {exc}")
+
+          if errors:
+              print("JSON syntax errors found:")
+              for error in errors:
+                  print(f"  - {error}")
+              sys.exit(1)
+
+          print(f"Checked {len(files)} JSON files successfully.")
+          PY
