@@ -105,6 +105,19 @@ Restrict the Kubernetes API endpoint to your own IP or trusted CIDR:
 API_ENDPOINT_ALLOWED_CIDRS='["1.2.3.4/32"]'
 ```
 
+## Storage defaults
+
+Longhorn is installed as the default StorageClass. New volumes use one Longhorn replica by default:
+
+```yaml
+defaultClassReplicaCount: 1
+defaultReplicaCount: 1
+```
+
+This is a bootstrap-friendly default for small clusters where the user may choose one, two, three, or four nodes. It keeps resource usage low and avoids assuming a three-node storage topology.
+
+If you want storage-level redundancy, increase the Longhorn replica count after bootstrap and make sure the cluster has enough schedulable nodes and disks for the chosen replica count. Existing volumes may need separate handling in Longhorn.
+
 ## ExternalDNS ownership
 
 ExternalDNS uses TXT records to track DNS ownership. If you reuse a DNS zone from an older cluster, either delete the old ExternalDNS-managed `A` and `TXT` records first, or set:

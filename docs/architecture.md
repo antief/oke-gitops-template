@@ -54,14 +54,14 @@ Destroy runs in reverse order before OKE is removed.
 
 ## Node count notes
 
-The default manifests are tuned for the default three-node cluster.
+The default infrastructure settings create a three-node ARM cluster, but the GitOps defaults are intentionally conservative enough to bootstrap smaller test clusters too.
 
-One or two node clusters can be used for testing, but adjust storage and observability expectations:
+Storage and observability are the main node-count-sensitive areas:
 
-- Longhorn defaults to three replicas per volume. With fewer than three nodes, use a lower Longhorn replica count or accept degraded volumes.
+- Longhorn defaults to one replica per new volume. This works with one-node and two-node clusters and keeps bootstrap resource usage low, but it does not provide storage-level redundancy. Increase the Longhorn replica count after bootstrap if your cluster has enough nodes and disks for redundant storage.
 - kube-prometheus-stack runs two Prometheus replicas, two Alertmanager replicas, and two Grafana replicas. Reduce these if a smaller cluster is resource constrained.
 
-Four or more nodes work with the default manifests. Longhorn still creates three replicas per volume by default, and observability still runs two replicas unless you change the Helm values.
+Four or more nodes work with the default manifests. Longhorn still uses one replica per new volume until you change the Helm values or StorageClass settings, and observability still runs two replicas unless you change its Helm values.
 
 Flux itself is not sensitive to the node count in this template.
 
