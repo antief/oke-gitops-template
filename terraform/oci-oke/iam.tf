@@ -27,6 +27,7 @@ resource "oci_identity_policy" "oke_worker_vault_secrets" {
   description    = "Allow OKE workers to read OCI Vault secret bundles for External Secrets Operator"
 
   statements = [
+    "Allow dynamic-group ${local.iam_worker_dynamic_group_name} to read vaults in compartment id ${var.compartment_ocid}",
     "Allow dynamic-group ${local.iam_worker_dynamic_group_name} to read secret-bundles in compartment id ${var.compartment_ocid}",
   ]
 }
