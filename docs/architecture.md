@@ -54,16 +54,27 @@ Destroy runs in reverse order before OKE is removed.
 
 ## Node count notes
 
-The default infrastructure settings create a three-node ARM cluster, but the GitOps defaults are intentionally conservative enough to bootstrap smaller test clusters too.
+The default infrastructure settings create a three-node ARM cluster. The GitOps defaults are tuned for that shape.
 
 Storage and observability are the main node-count-sensitive areas:
 
-- Longhorn defaults to one replica per new volume. This works with one-node and two-node clusters and keeps bootstrap resource usage low, but it does not provide storage-level redundancy. Increase the Longhorn replica count after bootstrap if your cluster has enough nodes and disks for redundant storage.
-- kube-prometheus-stack runs two Prometheus replicas, two Alertmanager replicas, and two Grafana replicas. Reduce these if a smaller cluster is resource constrained.
-
-Four or more nodes work with the default manifests. Longhorn still uses one replica per new volume until you change the Helm values or StorageClass settings, and observability still runs two replicas unless you change its Helm values.
+- Longhorn defaults to three replicas for new volumes. This is the Longhorn default and gives storage-level redundancy on a three-node cluster. If you intentionally run fewer than three nodes, reduce the Longhorn replica count before relying on dynamic volumes.
+- The dedicated `longhorn-observability` StorageClass uses two replicas for Prometheus and Loki to keep the baseline practical on a small free-tier cluster.
+- kube-prometheus-stack runs one Prometheus replica, two Alertmanager replicas, and two Grafana replicas. Reduce these if a smaller cluster is resource constrained.
+- Loki runs as a single monolithic instance with a persistent Longhorn volume, and Alloy runs as one API-based log collector deployment.
 
 Flux itself is not sensitive to the node count in this template.
+
+## OKE managed agents
+
+The template installs its own metrics and log stack, so optional OKE managed observability agents are disabled on worker nodes with node labels:
+
+```text
+oci.oraclecloud.com/oke-observability-agent-enabled=false
+oci.oraclecloud.com/oke-node-problem-detector-enabled=false
+```
+
+The managed DaemonSets can still be visible in `kube-system`, but they should stay at `DESIRED 0`.
 
 ## Secrets
 

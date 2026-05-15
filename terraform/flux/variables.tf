@@ -142,3 +142,9 @@ variable "cloudflare_api_token_k8s_secret_name" {
   type        = string
   default     = "cloudflare-api-token-secret"
 }
+
+variable "cluster_name" {
+  description = "Cluster name used for Flux post-build substitutions."
+  type        = string
+  default     = "oke-cluster"
+}

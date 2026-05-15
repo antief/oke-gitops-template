@@ -36,12 +36,12 @@ spec:
 
     persistence:
       defaultClass: true
-      defaultClassReplicaCount: 1
+      defaultClassReplicaCount: 3
       reclaimPolicy: Delete
       volumeBindingMode: Immediate
 
     defaultSettings:
-      defaultReplicaCount: 1
+      defaultReplicaCount: 3
       defaultDataPath: /var/lib/longhorn
       storageOverProvisioningPercentage: 100
       storageMinimalAvailablePercentage: 15

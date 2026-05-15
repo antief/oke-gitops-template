@@ -56,6 +56,18 @@ resource "oci_containerengine_node_pool" "workers" {
     value = var.cluster_name
   }
 
+  # Disable optional OKE managed observability agents on worker nodes.
+  # The template ships its own Prometheus, Loki, and Alloy stack.
+  initial_node_labels {
+    key   = "oci.oraclecloud.com/oke-observability-agent-enabled"
+    value = "false"
+  }
+
+  initial_node_labels {
+    key   = "oci.oraclecloud.com/oke-node-problem-detector-enabled"
+    value = "false"
+  }
+
   node_config_details {
     size = var.node_count
 

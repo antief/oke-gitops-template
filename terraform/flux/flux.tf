@@ -85,6 +85,8 @@ resource "kubernetes_config_map_v1" "flux_cluster_vars" {
     OCI_VAULT_ID                     = local.foundation_vault_id
     CLOUDFLARE_API_TOKEN_SECRET_NAME = local.cloudflare_api_token_secret_name
 
+    cluster_name = var.cluster_name
+
     BASE_DOMAIN                          = var.base_domain
     LETSENCRYPT_EMAIL                    = var.letsencrypt_email
     WHOAMI_HOSTNAME                      = "whoami.${var.base_domain}"

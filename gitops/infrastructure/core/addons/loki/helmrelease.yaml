@@ -1,0 +1,132 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: flux-system
+spec:
+  interval: 15m
+  targetNamespace: observability
+
+  chart:
+    spec:
+      chart: loki
+      sourceRef:
+        kind: HelmRepository
+        name: grafana-community
+        namespace: flux-system
+      version: '13.1.2'
+      interval: 1h
+
+  install:
+    remediation:
+      retries: 3
+
+  upgrade:
+    remediation:
+      retries: 3
+
+  values:
+    deploymentMode: Monolithic
+
+    loki:
+      auth_enabled: false
+      commonConfig:
+        path_prefix: /var/loki
+        replication_factor: 1
+      schemaConfig:
+        configs:
+          - from: "2026-01-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+      storage:
+        type: filesystem
+      storage_config:
+        filesystem:
+          chunks_directory: /var/loki/chunks
+          rules_directory: /var/loki/rules
+      limits_config:
+        retention_period: 168h
+        max_query_lookback: 168h
+        allow_structured_metadata: true
+        volume_enabled: true
+      compactor:
+        working_directory: /var/loki/compactor
+        retention_enabled: true
+        retention_delete_delay: 2h
+        delete_request_store: filesystem
+      ruler:
+        enable_api: false
+
+    singleBinary:
+      replicas: 1
+      persistence:
+        enabled: true
+        storageClass: longhorn-observability
+        accessModes:
+          - ReadWriteOnce
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 768Mi
+
+    # Disable other deployment modes explicitly for monolithic Loki.
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+    ingester:
+      replicas: 0
+    querier:
+      replicas: 0
+    queryFrontend:
+      replicas: 0
+    queryScheduler:
+      replicas: 0
+    distributor:
+      replicas: 0
+    compactor:
+      replicas: 0
+    indexGateway:
+      replicas: 0
+    bloomPlanner:
+      replicas: 0
+    bloomBuilder:
+      replicas: 0
+    bloomGateway:
+      replicas: 0
+
+    gateway:
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+    sidecar:
+      rules:
+        enabled: false
+
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+    lokiCanary:
+      enabled: false
+    minio:
+      enabled: false
+    test:
+      enabled: false
