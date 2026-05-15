@@ -7,8 +7,6 @@ spec:
   parentRefs:
     - name: public
       sectionName: http
-  hostnames:
-    - "*.${BASE_DOMAIN}"
   rules:
     - filters:
         - type: RequestRedirect
