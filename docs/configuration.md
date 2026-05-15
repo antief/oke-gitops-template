@@ -130,13 +130,13 @@ Optional OKE managed observability agents are disabled with node labels in the n
 
 ## ExternalDNS ownership
 
-ExternalDNS uses TXT records to track DNS ownership. If you reuse a DNS zone from an older cluster, either delete the old ExternalDNS-managed `A` and `TXT` records first, or set:
+ExternalDNS uses TXT records to track DNS ownership. If you reuse a DNS name from an older cluster, delete the old ExternalDNS-managed `A`/`AAAA` records and their matching TXT ownership records before bootstrapping the new cluster, or set:
 
 ```bash
 EXTERNAL_DNS_TXT_OWNER_ID='<old-owner-id>'
 ```
 
-Leave it empty for a new install.
+For example, a previous install may leave records like `whoami.example.com` and `a-whoami.example.com` with `external-dns/owner=<old-owner-id>`. A new owner will not take over those records automatically. Leave `EXTERNAL_DNS_TXT_OWNER_ID` empty for a new install that uses unused hostnames.
 
 ## Generated files
 

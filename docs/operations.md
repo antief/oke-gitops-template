@@ -94,6 +94,17 @@ kubectl get gateway,httproute -A
 curl -k -I https://whoami.<your-domain>/
 ```
 
+If `curl` times out but the Gateway has an external address, compare DNS with the LoadBalancer IP:
+
+```bash
+kubectl get gateway public -n envoy-gateway-system
+kubectl get svc -n envoy-gateway-system --field-selector spec.type=LoadBalancer
+dig +short whoami.<your-domain>
+curl -k -I --resolve whoami.<your-domain>:443:<load-balancer-ip> https://whoami.<your-domain>/
+```
+
+If the `--resolve` test works but normal DNS does not, remove stale Cloudflare `A`/`AAAA` and matching ExternalDNS TXT ownership records for that hostname, or reuse the old `EXTERNAL_DNS_TXT_OWNER_ID` intentionally.
+
 Check that optional OKE managed observability agents are disabled:
 
 ```bash
