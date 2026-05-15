@@ -71,7 +71,7 @@ set -a
 source .env
 set +a
 
-NS="$(oci os ns get --profile "${OCI_PROFILE:-DEFAULT}" --raw-output)"
+NS="$(oci os ns get --profile "${OCI_PROFILE:-DEFAULT}" --query data --raw-output)"
 
 oci os object bulk-delete \
   --namespace-name "$NS" \

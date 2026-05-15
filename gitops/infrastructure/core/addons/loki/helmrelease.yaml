@@ -46,8 +46,7 @@ spec:
         type: filesystem
       storage_config:
         filesystem:
-          chunks_directory: /var/loki/chunks
-          rules_directory: /var/loki/rules
+          directory: /var/loki/chunks
       limits_config:
         retention_period: 168h
         max_query_lookback: 168h
