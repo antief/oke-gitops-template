@@ -2,7 +2,7 @@
 
 Bootstrap a small Oracle Kubernetes Engine cluster with OpenTofu and Flux.
 
-The template creates OCI infrastructure, bootstraps Flux, and installs a practical Kubernetes baseline: Envoy Gateway, ExternalDNS, cert-manager, External Secrets Operator, Longhorn, kube-prometheus-stack, metrics-server, and a `whoami` test app.
+The template creates OCI infrastructure, bootstraps Flux, and installs a practical Kubernetes baseline: Envoy Gateway, ExternalDNS, cert-manager, External Secrets Operator, Longhorn, kube-prometheus-stack, Loki, Grafana Alloy, metrics-server, and a `whoami` test app.
 
 It is meant to get a new cluster running from code. After bootstrap, keep, change, or remove the defaults to fit your own environment.
 
@@ -68,7 +68,7 @@ kubectl get nodes
 curl -k -I https://whoami.<your-domain>/
 ```
 
-For a fuller check, see [Operations](docs/operations.md).
+For a fuller check, including Prometheus and Loki smoke tests, see [Operations](docs/operations.md).
 
 ## Main commands
 

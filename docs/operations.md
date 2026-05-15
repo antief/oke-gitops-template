@@ -94,6 +94,37 @@ kubectl get gateway,httproute -A
 curl -k -I https://whoami.<your-domain>/
 ```
 
+Check that optional OKE managed observability agents are disabled:
+
+```bash
+kubectl -n kube-system get ds,pods | grep -E 'oke-dataplane|node-problem|NAME' || true
+```
+
+The expected DaemonSet state is `DESIRED 0` for `oke-dataplane-observability-agent` and `oke-node-problem-detector`.
+
+Check metrics and logs:
+
+```bash
+kubectl top nodes
+
+kubectl -n observability port-forward svc/observability-kube-prometh-prometheus 9090:9090
+curl -s 'http://127.0.0.1:9090/-/ready'; echo
+curl -s 'http://127.0.0.1:9090/api/v1/query?query=up' | jq '.status, (.data.result | length)'
+
+kubectl -n observability port-forward svc/observability-loki-gateway 3101:80
+curl -s 'http://127.0.0.1:3101/'; echo
+curl -s 'http://127.0.0.1:3101/loki/api/v1/labels' | jq
+```
+
+Check that Alloy is not dropping or failing pushes to Loki:
+
+```bash
+kubectl -n observability logs deploy/observability-alloy -c alloy --since=30m \
+  | grep -E 'permission denied|no such file|status=400|status=500|no schema config|too far behind|level=error' || true
+```
+
+A clean result prints no matching lines.
+
 ## Node replacement
 
 The OKE stack selects the latest supported Kubernetes version and node image. If existing nodes need replacement after an update:

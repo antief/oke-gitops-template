@@ -39,9 +39,9 @@ spec:
     prometheus:
       enabled: true
       prometheusSpec:
-        replicas: 2
-        retention: 3d
-        retentionSize: 3GB
+        replicas: 1
+        retention: 7d
+        retentionSize: 8GB
         resources:
           requests:
             cpu: 50m
@@ -57,7 +57,7 @@ spec:
                 - ReadWriteOnce
               resources:
                 requests:
-                  storage: 5Gi
+                  storage: 10Gi
 
     alertmanager:
       enabled: true
@@ -94,6 +94,13 @@ spec:
           limits:
             cpu: 50m
             memory: 128Mi
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          access: proxy
+          url: http://observability-loki-gateway.observability.svc.cluster.local
+          jsonData:
+            maxLines: 1000
 
     nodeExporter:
       enabled: true

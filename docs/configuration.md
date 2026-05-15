@@ -107,16 +107,26 @@ API_ENDPOINT_ALLOWED_CIDRS='["1.2.3.4/32"]'
 
 ## Storage defaults
 
-Longhorn is installed as the default StorageClass. New volumes use one Longhorn replica by default:
+Longhorn is installed as the default StorageClass. New general-purpose volumes use three Longhorn replicas by default:
 
 ```yaml
-defaultClassReplicaCount: 1
-defaultReplicaCount: 1
+defaultClassReplicaCount: 3
+defaultReplicaCount: 3
 ```
 
-This is a bootstrap-friendly default for small clusters where the user may choose one, two, three, or four nodes. It keeps resource usage low and avoids assuming a three-node storage topology.
+This matches Longhorn's default redundancy model and assumes the default three-node cluster. If you intentionally use fewer than three nodes, reduce these values before relying on dynamically provisioned Longhorn volumes.
 
-If you want storage-level redundancy, increase the Longhorn replica count after bootstrap and make sure the cluster has enough schedulable nodes and disks for the chosen replica count. Existing volumes may need separate handling in Longhorn.
+The template also creates a dedicated `longhorn-observability` StorageClass. It uses two replicas for Prometheus and Loki volumes to keep the default observability stack practical on a small free-tier cluster.
+
+Existing volumes may need separate handling in Longhorn if you change replica counts later.
+
+## Observability defaults
+
+The template installs kube-prometheus-stack for metrics, Loki for logs, and Grafana Alloy as an API-based Kubernetes log collector.
+
+Prometheus uses a 10 GiB Longhorn volume with seven-day retention. Loki uses a 10 GiB Longhorn volume with seven-day retention. Alloy drops log entries older than 30 minutes before sending them to Loki, which prevents old API backfill data from being rejected by Loki during bootstrap or rebuilds.
+
+Optional OKE managed observability agents are disabled with node labels in the node pool configuration, because the template provides its own observability stack.
 
 ## ExternalDNS ownership
 
