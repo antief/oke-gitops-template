@@ -20,6 +20,13 @@ reinit:
     just _reinit-oke
     just _reinit-flux
 
+upgrade-locks:
+    root="$(git rev-parse --show-toplevel)"; \
+    for d in terraform/foundation terraform/oci-oke terraform/flux; do \
+      (cd "$root/$d" && rm -rf .terraform && tofu init -backend=false -upgrade); \
+    done; \
+    find "$root/terraform" -type d -name .terraform -prune -exec rm -rf {} +
+
 validate: init
     scripts/preflight.sh
     just _plan-foundation

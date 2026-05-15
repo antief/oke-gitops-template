@@ -47,6 +47,10 @@ locals {
     OKEnodePoolName = var.node_pool_name
   })
 
+  iam_worker_dynamic_group_name        = "${var.cluster_name}-worker-instances"
+  iam_worker_storage_policy_name       = "${var.cluster_name}-worker-storage"
+  iam_worker_vault_secrets_policy_name = "${var.cluster_name}-worker-vault-secrets"
+
   # Always use the first availability domain in the region
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
 

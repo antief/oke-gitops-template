@@ -96,3 +96,27 @@ jobs:
 
           print(f"Checked {len(files)} JSON files successfully.")
           PY
+
+      - name: Check shell script syntax
+        run: |
+          while IFS= read -r -d '' file; do
+            bash -n "$file"
+          done < <(find scripts terraform -type f -name '*.sh' -print0)
+
+      - name: Check final newlines
+        run: |
+          missing=0
+
+          while IFS= read -r -d '' file; do
+            if [ ! -s "$file" ]; then
+              continue
+            fi
+
+            last_byte="$(tail -c 1 "$file" | od -An -t x1 | tr -d ' \n')"
+            if [ "$last_byte" != "0a" ]; then
+              echo "Missing final newline: $file"
+              missing=1
+            fi
+          done < <(git ls-files -z)
+
+          exit "$missing"
