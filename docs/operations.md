@@ -9,7 +9,7 @@ just init
 just validate
 ```
 
-On a clean install, the Flux plan is skipped until foundation and OKE state outputs exist. That is expected before the first `just apply`.
+On a clean install, the Flux plan is skipped until foundation and OKE outputs exist. That is expected before the first `just apply`.
 
 ## Apply
 
@@ -19,12 +19,9 @@ just apply
 
 Apply order:
 
-1. foundation
-2. OKE infrastructure
-3. kubeconfig
-4. Flux bootstrap
-5. Flux root Kustomizations
-6. GitOps controllers, configs, add-ons, and apps
+```text
+foundation -> OKE -> kubeconfig -> Flux bootstrap -> GitOps roots
+```
 
 ## Rebuild
 
@@ -46,30 +43,19 @@ Use [uninstall.md](uninstall.md) for full cleanup.
 
 ## GitOps changes
 
-OpenTofu is not needed for normal GitOps changes. Commit the change to the repository watched by Flux and reconcile Flux if you want to apply it immediately.
+OpenTofu is not needed for normal GitOps changes. Commit the change and let Flux reconcile it.
 
-If the repository uses branch protection, make the change and use the pull request helper:
+With branch protection enabled, use the pull request helper:
 
 ```bash
 just pr update-gitops "update gitops"
 ```
 
-The helper creates a branch when run from `main`, commits current changes, opens a pull request, and enables auto-merge. It requires the GitHub CLI (`gh`) to be installed and authenticated.
-
-After the pull request has merged, reconcile Flux if you do not want to wait for the normal reconciliation interval:
+After the pull request has merged, reconcile Flux if you do not want to wait for the normal interval:
 
 ```bash
 git switch main
-git pull
-flux reconcile source git flux-system -n flux-system
-```
-
-If the repository does not use branch protection, a direct commit and push also works:
-
-```bash
-git add gitops/...
-git commit -m "update gitops"
-git push
+git pull --ff-only
 flux reconcile source git flux-system -n flux-system
 ```
 
@@ -91,7 +77,7 @@ kubectl get nodes -o wide
 kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
 kubectl get svc -A --field-selector spec.type=LoadBalancer
 kubectl get gateway,httproute -A
-curl -k -I https://whoami.<your-domain>/
+curl -I https://whoami.<your-domain>/
 ```
 
 If `curl` times out but the Gateway has an external address, compare DNS with the LoadBalancer IP:
@@ -103,17 +89,9 @@ dig +short whoami.<your-domain>
 curl -k -I --resolve whoami.<your-domain>:443:<load-balancer-ip> https://whoami.<your-domain>/
 ```
 
-If the `--resolve` test works but normal DNS does not, remove stale Cloudflare `A`/`AAAA` and matching ExternalDNS TXT ownership records for that hostname, or reuse the old `EXTERNAL_DNS_TXT_OWNER_ID` intentionally.
+If the `--resolve` test works but normal DNS does not, remove stale Cloudflare `A`/`AAAA` records and matching ExternalDNS TXT ownership records for that hostname, or intentionally reuse the old `EXTERNAL_DNS_TXT_OWNER_ID`.
 
-Check that optional OKE managed observability agents are disabled:
-
-```bash
-kubectl -n kube-system get ds,pods | grep -E 'oke-dataplane|node-problem|NAME' || true
-```
-
-The expected DaemonSet state is `DESIRED 0` for `oke-dataplane-observability-agent` and `oke-node-problem-detector`.
-
-Check metrics and logs:
+## Observability checks
 
 ```bash
 kubectl top nodes
@@ -135,6 +113,16 @@ kubectl -n observability logs deploy/observability-alloy -c alloy --since=30m \
 ```
 
 A clean result prints no matching lines.
+
+## OKE managed agents
+
+The template disables optional OKE managed observability agents with node labels.
+
+```bash
+kubectl -n kube-system get ds,pods | grep -E 'oke-dataplane|node-problem|NAME' || true
+```
+
+The expected DaemonSet state is `DESIRED 0` for `oke-dataplane-observability-agent` and `oke-node-problem-detector`.
 
 ## Node replacement
 

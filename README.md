@@ -2,40 +2,28 @@
 
 Bootstrap a small Oracle Kubernetes Engine cluster with OpenTofu and Flux.
 
-The template creates OCI infrastructure, bootstraps Flux, and installs a practical Kubernetes baseline: Envoy Gateway, ExternalDNS, cert-manager, External Secrets Operator, Longhorn, kube-prometheus-stack, Loki, Grafana Alloy, metrics-server, and a `whoami` test app.
+The template creates OCI infrastructure, bootstraps Flux, and installs a practical Kubernetes baseline:
+
+- Envoy Gateway and Gateway API for ingress
+- OCI Network Load Balancer for public traffic
+- ExternalDNS and cert-manager with Cloudflare DNS-01
+- External Secrets Operator with OCI Vault
+- Longhorn for persistent storage
+- kube-prometheus-stack, Loki, and Grafana Alloy for observability
+- `whoami` as a public smoke-test app
 
 It is meant to get a new cluster running from code. After bootstrap, keep, change, or remove the defaults to fit your own environment.
 
-## What you provide
+## What you need
 
-- OCI CLI profile, usually the `DEFAULT` profile from [`oci setup config`](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliconfigure.htm)
-- an OCI [compartment](https://docs.oracle.com/en-us/iaas/Content/Identity/compartments/managingcompartments.htm) for the cluster. A dedicated child compartment is recommended, but root tenancy can also be used in a personal tenancy
-- an OCI user/API key with permission to create the required OCI resources. See [API signing keys](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm) and [common IAM policies](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/commonpolicies.htm)
-- OCI [Customer Secret Key](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/managingcredentials.htm) for the OpenTofu state backend
-- GitHub token with read/write access to your new repository
-- Cloudflare DNS token for your zone
-- a Cloudflare-managed DNS zone
+- OCI CLI configured with `oci setup config`
+- an OCI compartment for the cluster
+- an OCI Customer Secret Key for the OpenTofu state backend
+- a GitHub token with access to the repository created from this template
+- a Cloudflare DNS token for your zone
+- local tools: `git`, `oci`, `tofu`, `kubectl`, `flux`, `just`, `direnv`, and optionally `gh`
 
-The template creates the state bucket if it is missing, then creates the network, OKE cluster, Vault, KMS key, IAM resources, Flux, and Kubernetes components.
-
-## Tools
-
-Install:
-
-- `git`
-- `oci`
-- `tofu`
-- `kubectl`
-- `flux`
-- `just`
-- `direnv`
-- `gh` for the optional pull request helper
-
-Configure OCI CLI:
-
-```bash
-oci setup config
-```
+See [Configuration](docs/configuration.md) for details.
 
 ## Quick start
 
@@ -43,7 +31,7 @@ Create a repository from this template, clone it, and fill in `.env`:
 
 ```bash
 cp .env.example .env
-$EDITOR .env
+nano .env
 ```
 
 Then run:
@@ -54,21 +42,23 @@ just validate
 just apply
 ```
 
-`just init` writes local configuration from `.env`, creates the state bucket if needed, and initializes the OpenTofu backends.
+What the commands do:
 
-`just validate` checks local files, OCI access, and OpenTofu plans.
-
-`just apply` creates the foundation resources, OKE cluster, kubeconfig, Flux bootstrap, and GitOps roots.
+```text
+just init       generate local config and initialize OpenTofu backends
+just validate   check local setup, OCI access, and OpenTofu plans
+just apply      create or update foundation, OKE, Flux, and GitOps roots
+```
 
 ## Smoke test
 
 ```bash
 flux get kustomizations -A
 kubectl get nodes
-curl -k -I https://whoami.<your-domain>/
+curl -I https://whoami.<your-domain>/
 ```
 
-For a fuller check, including Prometheus and Loki smoke tests, see [Operations](docs/operations.md).
+For a fuller check, including metrics and logs, see [Operations](docs/operations.md).
 
 ## Main commands
 
@@ -83,19 +73,24 @@ just rebuild    # destroy + apply
 
 Use `just destroy` for rebuild testing. Use [Full uninstall](docs/uninstall.md) only when you want to remove everything, including Vault, KMS, and state.
 
-## Development workflow
-
-For repositories with branch protection enabled, use the pull request helper after making a change:
+For repositories with branch protection enabled, the pull request helper is useful:
 
 ```bash
 just pr my-change "docs: describe my change"
 ```
 
-The helper creates a branch if needed, commits current changes, opens a pull request, and enables auto-merge. It requires the GitHub CLI (`gh`) to be installed and authenticated.
+It creates a branch if needed, commits current changes, opens a pull request, and enables auto-merge. It requires the GitHub CLI (`gh`).
 
-## Repository layout
+## Layout
 
-The repository has OpenTofu stacks under `terraform/` and Flux manifests under `gitops/`. See [Architecture](docs/architecture.md) for details.
+```text
+terraform/foundation   Vault, KMS key, and shared secrets
+terraform/oci-oke      VCN, OKE cluster, node pool, and IAM policy
+terraform/flux         Flux bootstrap and root ownership
+gitops/                Flux-managed Kubernetes manifests
+```
+
+More detail: [Architecture](docs/architecture.md)
 
 ## Local files
 
