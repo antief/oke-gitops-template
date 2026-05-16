@@ -22,13 +22,13 @@ nodes            private worker nodes
 service_lb       public Kubernetes LoadBalancer services
 ```
 
-The default node pool uses ARM-based `VM.Standard.A1.Flex` nodes. The default is three nodes with one OCPU and 8 GB memory each. Nodes are placed in one availability domain and spread across fault domains when available.
+The default node pool uses ARM-based `VM.Standard.A1.Flex` nodes. The default is three nodes with one OCPU and 8 GB memory each.
 
-The cluster uses Flannel overlay networking. This keeps the VCN layout small because pod IPs do not need a separate OCI subnet.
+The cluster uses Flannel overlay networking.
 
 ## Public traffic
 
-Envoy Gateway creates a Kubernetes `LoadBalancer` service annotated for an OCI Network Load Balancer. The NLB is created in the `service_lb` subnet and exposes HTTP and HTTPS.
+Envoy Gateway creates a Kubernetes `LoadBalancer` service annotated for an OCI Network Load Balancer and exposes HTTP and HTTPS.
 
 Gateway API resources route traffic from the public Gateway to workloads.
 
@@ -63,7 +63,6 @@ Storage and observability are the main node-count-sensitive areas:
 - kube-prometheus-stack runs one Prometheus replica, two Alertmanager replicas, and one Grafana replica. Reduce these if a smaller cluster is resource constrained.
 - Loki runs as a single monolithic instance with a persistent Longhorn volume, and Alloy runs as one API-based log collector deployment.
 
-Flux itself is not sensitive to the node count in this template.
 
 ## OKE managed agents
 
@@ -73,8 +72,6 @@ The template installs its own metrics and log stack, so optional OKE managed obs
 oci.oraclecloud.com/oke-observability-agent-enabled=false
 oci.oraclecloud.com/oke-node-problem-detector-enabled=false
 ```
-
-The managed DaemonSets can still be visible in `kube-system`, but they should stay at `DESIRED 0`.
 
 ## Secrets
 

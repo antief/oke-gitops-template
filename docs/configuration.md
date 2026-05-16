@@ -105,7 +105,7 @@ The template installs:
 - Loki for logs
 - Grafana Alloy as an API-based Kubernetes log collector
 
-Prometheus and Loki use 10 GiB Longhorn volumes with seven-day retention. Alloy drops log entries older than 30 minutes before sending them to Loki, which avoids old API backfill data being rejected during bootstrap or rebuilds.
+Prometheus and Loki use 10 GiB Longhorn volumes with seven-day retention. 
 
 Optional OKE managed observability agents are disabled with node labels because the template provides its own stack.
 
