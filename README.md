@@ -21,7 +21,7 @@ It is meant to get a new cluster running from code. After bootstrap, keep, chang
 - an OCI Customer Secret Key for the OpenTofu state backend
 - a GitHub token with access to the repository created from this template
 - a Cloudflare DNS token for your zone
-- local tools: `git`, `oci`, `tofu`, `kubectl`, `flux`, `just`, `direnv`, and optionally `gh`
+- local tools: `git`, `oci`, `tofu`, `kubectl`, `flux`, `just`, `direnv`, and optionally `gh` and `jq`
 
 See [Configuration](docs/configuration.md) for details.
 
