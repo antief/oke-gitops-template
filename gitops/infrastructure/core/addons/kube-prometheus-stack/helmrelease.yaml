@@ -74,7 +74,7 @@ spec:
 
     grafana:
       enabled: true
-      replicas: 2
+      replicas: 1
       ingress:
         enabled: false
       persistence:

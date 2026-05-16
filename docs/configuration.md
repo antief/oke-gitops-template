@@ -101,6 +101,7 @@ The template also creates `longhorn-observability`, a two-replica StorageClass f
 
 The template installs:
 
+- metrics-server for Kubernetes resource metrics
 - kube-prometheus-stack for metrics, alerts, and Grafana
 - Loki for logs
 - Grafana Alloy as an API-based Kubernetes log collector

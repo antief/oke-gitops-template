@@ -60,7 +60,7 @@ Storage and observability are the main node-count-sensitive areas:
 
 - Longhorn defaults to three replicas for new volumes. This is the Longhorn default and gives storage-level redundancy on a three-node cluster. If you intentionally run fewer than three nodes, reduce the Longhorn replica count before relying on dynamic volumes.
 - The dedicated `longhorn-observability` StorageClass uses two replicas for Prometheus and Loki to keep the baseline practical on a small free-tier cluster.
-- kube-prometheus-stack runs one Prometheus replica, two Alertmanager replicas, and two Grafana replicas. Reduce these if a smaller cluster is resource constrained.
+- kube-prometheus-stack runs one Prometheus replica, two Alertmanager replicas, and one Grafana replica. Reduce these if a smaller cluster is resource constrained.
 - Loki runs as a single monolithic instance with a persistent Longhorn volume, and Alloy runs as one API-based log collector deployment.
 
 Flux itself is not sensitive to the node count in this template.

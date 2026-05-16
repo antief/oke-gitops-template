@@ -9,7 +9,9 @@ The template creates OCI infrastructure, bootstraps Flux, and installs a practic
 - ExternalDNS and cert-manager with Cloudflare DNS-01
 - External Secrets Operator with OCI Vault
 - Longhorn for persistent storage
-- kube-prometheus-stack, Loki, and Grafana Alloy for observability
+- metrics-server for Kubernetes resource metrics
+- kube-prometheus-stack for metrics, alerting, and Grafana
+- Loki and Grafana Alloy for logs
 - `whoami` as a public smoke-test app
 
 It is meant to get a new cluster running from code. After bootstrap, keep, change, or remove the defaults to fit your own environment.
@@ -21,7 +23,7 @@ It is meant to get a new cluster running from code. After bootstrap, keep, chang
 - an OCI Customer Secret Key for the OpenTofu state backend
 - a GitHub token with access to the repository created from this template
 - a Cloudflare DNS token for your zone
-- local tools: `git`, `oci`, `tofu`, `kubectl`, `flux`, `just`, `direnv`, and optionally `gh`
+- local tools: `git`, `oci`, `tofu`, `kubectl`, `flux`, `just`, `direnv`, and optionally `gh` and `jq`
 
 See [Configuration](docs/configuration.md) for details.
 
