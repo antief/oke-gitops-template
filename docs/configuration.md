@@ -1,13 +1,13 @@
 # Configuration
 
-Copy the example file and fill in your own values:
+All user-provided settings live in `.env`.
 
 ```bash
 cp .env.example .env
-$EDITOR .env
+nano .env
 ```
 
-Run `just init` after changing `.env`.
+Run `just init` after changing `.env`. It generates the local OpenTofu config files and creates the state bucket if needed.
 
 ## OCI
 
@@ -17,23 +17,11 @@ OCI_REGION=eu-stockholm-1
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1...
 ```
 
-`OCI_PROFILE=DEFAULT` matches the profile created by `oci setup config`. Change it only if you use another OCI CLI profile.
+`OCI_PROFILE=DEFAULT` matches the profile created by `oci setup config`. The helper reads tenancy OCID, user OCID, fingerprint, private key path, and region from that profile unless you set them directly in `.env`.
 
-The target compartment can be the root tenancy or a child compartment.
+Use a dedicated child compartment if possible. Root tenancy works in a personal tenancy, but a child compartment is easier to clean up and safer for testing.
 
-A dedicated child compartment is recommended for testing and rebuilds because it keeps cluster resources easy to identify and clean up.
-
-The worker node dynamic group matches compute instances by compartment. If you use a shared compartment with unrelated compute instances, adjust the IAM matching rule before applying.
-
-For a personal tenancy, the default OCI CLI user usually has the required permissions. In restricted tenancies, the user must be allowed to create the IAM dynamic group and policies used by the cluster.
-
-`just init` can read these from the selected OCI CLI profile:
-
-- tenancy OCID
-- user OCID
-- API key fingerprint
-- API private key path
-- region
+The worker node dynamic group matches compute instances by compartment. If the compartment contains unrelated compute instances, adjust the IAM matching rule before applying.
 
 ## OpenTofu state
 
@@ -44,9 +32,7 @@ AWS_ACCESS_KEY_ID='<oci-customer-secret-key-access-key>'
 AWS_SECRET_ACCESS_KEY='<oci-customer-secret-key-secret>'
 ```
 
-OpenTofu state is stored in OCI Object Storage through the [S3-compatible API](https://docs.oracle.com/en-us/iaas/Content/Object/Tasks/s3compatibleapi.htm). `just init` creates the bucket if it does not exist.
-
-Use a unique `TOFU_STATE_PREFIX` for each environment.
+State is stored in OCI Object Storage through the S3-compatible API. Use a unique `TOFU_STATE_PREFIX` for each environment.
 
 ## GitHub and Flux
 
@@ -57,7 +43,7 @@ GITHUB_BRANCH=main
 GITHUB_TOKEN='<github-token-with-repo-access>'
 ```
 
-Use a fine-grained token scoped to the repository created from this template.
+Use a fine-grained GitHub token scoped to the repository created from this template.
 
 Minimum practical permissions:
 
@@ -65,8 +51,6 @@ Minimum practical permissions:
 Contents: read and write
 Metadata: read
 ```
-
-Flux bootstrap uses this token to write and reconcile Flux manifests.
 
 ## DNS and TLS
 
@@ -84,7 +68,7 @@ Zone: Zone: Read
 Resource: selected DNS zone
 ```
 
-The foundation stack stores the token in OCI Vault. External Secrets Operator reads it from Vault and creates Kubernetes Secrets for cert-manager and ExternalDNS.
+The token is stored in OCI Vault. External Secrets Operator syncs it into Kubernetes for cert-manager and ExternalDNS.
 
 ## Cluster sizing
 
@@ -105,54 +89,47 @@ Restrict the Kubernetes API endpoint to your own IP or trusted CIDR:
 API_ENDPOINT_ALLOWED_CIDRS='["1.2.3.4/32"]'
 ```
 
-## Storage defaults
+## Storage
 
-Longhorn is installed as the default StorageClass. New general-purpose volumes use three Longhorn replicas by default:
+Longhorn is the default StorageClass. General-purpose volumes use three replicas by default, which matches the default three-node cluster.
 
-```yaml
-defaultClassReplicaCount: 3
-defaultReplicaCount: 3
-```
+If you intentionally run fewer than three nodes, reduce the Longhorn replica count before relying on dynamically provisioned volumes.
 
-This matches Longhorn's default redundancy model and assumes the default three-node cluster. If you intentionally use fewer than three nodes, reduce these values before relying on dynamically provisioned Longhorn volumes.
+The template also creates `longhorn-observability`, a two-replica StorageClass for Prometheus and Loki. This keeps the observability baseline practical on a small cluster.
 
-The template also creates a dedicated `longhorn-observability` StorageClass. It uses two replicas for Prometheus and Loki volumes to keep the default observability stack practical on a small free-tier cluster.
+## Observability
 
-Existing volumes may need separate handling in Longhorn if you change replica counts later.
+The template installs:
 
-## Observability defaults
+- kube-prometheus-stack for metrics, alerts, and Grafana
+- Loki for logs
+- Grafana Alloy as an API-based Kubernetes log collector
 
-The template installs kube-prometheus-stack for metrics, Loki for logs, and Grafana Alloy as an API-based Kubernetes log collector.
+Prometheus and Loki use 10 GiB Longhorn volumes with seven-day retention. Alloy drops log entries older than 30 minutes before sending them to Loki, which avoids old API backfill data being rejected during bootstrap or rebuilds.
 
-Prometheus uses a 10 GiB Longhorn volume with seven-day retention. Loki uses a 10 GiB Longhorn volume with seven-day retention. Alloy drops log entries older than 30 minutes before sending them to Loki, which prevents old API backfill data from being rejected by Loki during bootstrap or rebuilds.
-
-Optional OKE managed observability agents are disabled with node labels in the node pool configuration, because the template provides its own observability stack.
+Optional OKE managed observability agents are disabled with node labels because the template provides its own stack.
 
 ## ExternalDNS ownership
 
-ExternalDNS uses TXT records to track DNS ownership. If you reuse a DNS name from an older cluster, delete the old ExternalDNS-managed `A`/`AAAA` records and their matching TXT ownership records before bootstrapping the new cluster, or set:
+ExternalDNS uses TXT records to track DNS ownership.
+
+If you reuse hostnames from an older cluster, remove the old ExternalDNS-managed `A`/`AAAA` records and matching TXT ownership records before bootstrapping. Alternatively, intentionally reuse the old owner id:
 
 ```bash
 EXTERNAL_DNS_TXT_OWNER_ID='<old-owner-id>'
 ```
 
-For example, a previous install may leave records like `whoami.example.com` and `a-whoami.example.com` with `external-dns/owner=<old-owner-id>`. A new owner will not take over those records automatically. Leave `EXTERNAL_DNS_TXT_OWNER_ID` empty for a new install that uses unused hostnames.
+For a new install with unused hostnames, leave `EXTERNAL_DNS_TXT_OWNER_ID` empty.
 
 ## Generated files
 
-`just init` writes these local files:
+`just init` writes local files under `terraform/`:
 
 ```text
 terraform/.envrc
-terraform/foundation/backend.hcl
-terraform/oci-oke/backend.hcl
-terraform/flux/backend.hcl
-terraform/foundation/secrets.auto.tfvars
-terraform/oci-oke/secrets.auto.tfvars
-terraform/flux/secrets.auto.tfvars
-terraform/foundation/terraform.tfvars
-terraform/oci-oke/terraform.tfvars
-terraform/flux/terraform.tfvars
+terraform/*/backend.hcl
+terraform/*/secrets.auto.tfvars
+terraform/*/terraform.tfvars
 ```
 
 They are ignored by Git and must stay local.
