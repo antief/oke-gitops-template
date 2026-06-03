@@ -254,4 +254,18 @@ pr branch msg:
       gh pr create --fill --base main
     fi
 
-    gh pr merge --auto --squash --delete-branch
+    merge_error="$(mktemp)"
+    if gh pr merge --auto --squash --delete-branch 2>"$merge_error"; then
+      rm -f "$merge_error"
+      exit 0
+    fi
+
+    if grep -q "Pull request is in clean status" "$merge_error"; then
+      rm -f "$merge_error"
+      gh pr merge --squash --delete-branch
+      exit 0
+    fi
+
+    cat "$merge_error" >&2
+    rm -f "$merge_error"
+    exit 1
