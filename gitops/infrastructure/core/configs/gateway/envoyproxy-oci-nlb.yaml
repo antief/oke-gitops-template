@@ -7,6 +7,15 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      envoyDaemonSet:
+        container:
+          resources:
+            requests:
+              cpu: 5m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
       envoyService:
         externalTrafficPolicy: Cluster
         annotations:
