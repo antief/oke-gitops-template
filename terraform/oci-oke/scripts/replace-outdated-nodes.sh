@@ -8,19 +8,26 @@ TARGET_IMAGE_ID="${TARGET_IMAGE_ID:-}"
 GRACE_DURATION="${GRACE_DURATION:-PT30M}"
 WAIT_SECONDS="${WAIT_SECONDS:-3600}"
 WAIT_INTERVAL_SECONDS="${WAIT_INTERVAL_SECONDS:-30}"
+LONGHORN_WAIT_SECONDS="${LONGHORN_WAIT_SECONDS:-2700}"
+LONGHORN_WAIT_INTERVAL_SECONDS="${LONGHORN_WAIT_INTERVAL_SECONDS:-10}"
+MAX_REPLACEMENTS="${MAX_REPLACEMENTS:-1}"
 STATE_DIR="${STATE_DIR:-.oke-node-replace}"
 DRY_RUN=false
 FORCE=false
 NO_TERRAFORM_OUTPUTS=false
 SKIP_IMAGE_CHECK=false
+AUTO_CLEAN_LONGHORN_STALE=true
 
 usage() {
   cat <<'USAGE'
 Usage:
   ./scripts/replace-outdated-nodes.sh [options]
 
-Replaces OKE managed nodes one at a time using:
+Replaces OKE managed nodes safely, one at a time, using:
   oci ce node-pool delete-node --is-decrement-size false
+
+The script is intentionally conservative. By default it replaces at most one
+node per run. Use --max-replacements to increase that limit explicitly.
 
 By default the script reads these from OpenTofu/Terraform outputs in the
 current directory:
@@ -29,28 +36,38 @@ current directory:
   - node_image_id
 
 Options:
-  --node-pool-id <ocid>       OKE node pool OCID
-  --target-k8s-version <ver>  Target Kubernetes version, for example v1.35.2 or 1.35.2
-  --target-image-id <ocid>    Target node image OCID. If the node pool API does not expose
-                              per-node image IDs, the script reads them from Compute instances.
-  --skip-image-check          Ignore node image differences. Useful with restricted OCI policies.
-  --force                     Replace all ACTIVE nodes, even if they look current
-  --dry-run                   Print what would be replaced, but do not delete nodes
-  --grace-duration <iso8601>  OKE eviction grace duration. Default: PT30M
-  --wait-seconds <seconds>    Max wait for each OCI work request and settle loop. Default: 3600
-  --no-terraform-outputs      Do not read tofu/terraform outputs automatically
-  -h, --help                  Show this help
+  --node-pool-id <ocid>             OKE node pool OCID
+  --target-k8s-version <ver>        Target Kubernetes version, for example v1.35.2 or 1.35.2
+  --target-image-id <ocid>          Target node image OCID. If the node pool API does not expose
+                                    per-node image IDs, the script reads them from Compute instances.
+  --skip-image-check                Ignore node image differences. Useful with restricted OCI policies.
+  --force                           Treat ACTIVE nodes as candidates, even if they look current
+  --max-replacements <n|all>        Maximum number of nodes to replace in this run. Default: 1
+  --dry-run                         Print checks and selected candidates, but do not delete or clean anything
+  --grace-duration <iso8601>        OKE eviction grace duration. Default: PT30M
+  --wait-seconds <seconds>          Max wait for each OCI work request and Kubernetes readiness. Default: 3600
+  --longhorn-wait-seconds <seconds> Max wait for Longhorn health after each replacement. Default: 2700
+  --longhorn-wait-interval <sec>    Longhorn polling interval. Default: 10
+  --no-longhorn-cleanup             Do not clean stale Longhorn replicas/nodes left by replaced nodes
+  --no-terraform-outputs            Do not read tofu/terraform outputs automatically
+  -h, --help                        Show this help
 
 Environment variables with the same names are also supported:
   NODE_POOL_ID, TARGET_K8S_VERSION, TARGET_IMAGE_ID, GRACE_DURATION,
-  WAIT_SECONDS, WAIT_INTERVAL_SECONDS, STATE_DIR
+  WAIT_SECONDS, WAIT_INTERVAL_SECONDS, LONGHORN_WAIT_SECONDS,
+  LONGHORN_WAIT_INTERVAL_SECONDS, MAX_REPLACEMENTS, STATE_DIR,
+  AUTO_CLEAN_LONGHORN_STALE
 
 Examples:
   tofu apply
   ./scripts/replace-outdated-nodes.sh --dry-run
   ./scripts/replace-outdated-nodes.sh
 
-  NODE_POOL_ID="$(tofu output -raw node_pool_id)" ./scripts/replace-outdated-nodes.sh --force
+  # Deliberate one-node HA test
+  ./scripts/replace-outdated-nodes.sh --force --max-replacements 1
+
+  # Replace all matching candidates explicitly
+  ./scripts/replace-outdated-nodes.sh --max-replacements all
 USAGE
 }
 
@@ -65,9 +82,13 @@ while [[ $# -gt 0 ]]; do
     --target-image-id) TARGET_IMAGE_ID="${2:-}"; shift 2 ;;
     --grace-duration) GRACE_DURATION="${2:-}"; shift 2 ;;
     --wait-seconds) WAIT_SECONDS="${2:-}"; shift 2 ;;
+    --longhorn-wait-seconds) LONGHORN_WAIT_SECONDS="${2:-}"; shift 2 ;;
+    --longhorn-wait-interval) LONGHORN_WAIT_INTERVAL_SECONDS="${2:-}"; shift 2 ;;
+    --max-replacements) MAX_REPLACEMENTS="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --force) FORCE=true; shift ;;
     --skip-image-check) SKIP_IMAGE_CHECK=true; shift ;;
+    --no-longhorn-cleanup) AUTO_CLEAN_LONGHORN_STALE=false; shift ;;
     --no-terraform-outputs) NO_TERRAFORM_OUTPUTS=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
@@ -83,6 +104,13 @@ require_cmd flock
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]] || die "--wait-seconds must be an integer"
 [[ "$WAIT_INTERVAL_SECONDS" =~ ^[0-9]+$ ]] || die "WAIT_INTERVAL_SECONDS must be an integer"
 [[ "$WAIT_INTERVAL_SECONDS" -gt 0 ]] || die "WAIT_INTERVAL_SECONDS must be greater than zero"
+[[ "$LONGHORN_WAIT_SECONDS" =~ ^[0-9]+$ ]] || die "--longhorn-wait-seconds must be an integer"
+[[ "$LONGHORN_WAIT_INTERVAL_SECONDS" =~ ^[0-9]+$ ]] || die "--longhorn-wait-interval must be an integer"
+[[ "$LONGHORN_WAIT_INTERVAL_SECONDS" -gt 0 ]] || die "--longhorn-wait-interval must be greater than zero"
+if [[ "$MAX_REPLACEMENTS" != "all" ]]; then
+  [[ "$MAX_REPLACEMENTS" =~ ^[0-9]+$ ]] || die "--max-replacements must be a positive integer or 'all'"
+  [[ "$MAX_REPLACEMENTS" -gt 0 ]] || die "--max-replacements must be greater than zero"
+fi
 
 read_tf_output() {
   local name="$1"
@@ -173,11 +201,6 @@ k8s_name_for_oci_node_from_json() {
   ' | head -n1
 }
 
-k8s_name_for_oci_node() {
-  local node_id="$1"
-  k8s_name_for_oci_node_from_json "$(kubectl_nodes_json)" "$node_id"
-}
-
 k8s_node_ready_from_json() {
   local nodes_json="$1"
   local name="$2"
@@ -190,18 +213,15 @@ k8s_node_ready_from_json() {
   ' >/dev/null
 }
 
-k8s_node_ready() {
-  local name="$1"
-  k8s_node_ready_from_json "$(kubectl_nodes_json)" "$name"
+k8s_node_exists_from_json() {
+  local nodes_json="$1"
+  local name="$2"
+  printf '%s' "$nodes_json" | jq -e --arg name "$name" '.items[]? | select(.metadata.name == $name)' >/dev/null
 }
 
 k8s_node_version() {
   local name="$1"
   kubectl get node "$name" -o json 2>/dev/null | jq -r '.status.nodeInfo.kubeletVersion // ""'
-}
-
-ready_node_count() {
-  ready_node_count_from_json "$(kubectl_nodes_json)"
 }
 
 compute_image_id_for_instance() {
@@ -297,7 +317,205 @@ wait_for_pool_and_cluster() {
 
 longhorn_available() {
   kubectl get namespace longhorn-system >/dev/null 2>&1 || return 1
-  kubectl get crd volumes.longhorn.io replicas.longhorn.io nodes.longhorn.io >/dev/null 2>&1 || return 1
+  kubectl get crd volumes.longhorn.io replicas.longhorn.io nodes.longhorn.io engines.longhorn.io >/dev/null 2>&1 || return 1
+}
+
+longhorn_node_ready_from_json() {
+  local nodes_json="$1"
+  local name="$2"
+
+  printf '%s' "$nodes_json" | jq -e --arg name "$name" '
+    .items[]?
+    | select(.metadata.name == $name)
+    | .status.conditions[]?
+    | select(.type == "Ready" and .status == "True")
+  ' >/dev/null
+}
+
+longhorn_volume_healthy_from_json() {
+  local volumes_json="$1"
+  local volume="$2"
+
+  printf '%s' "$volumes_json" | jq -e --arg volume "$volume" '
+    .items[]?
+    | select(.metadata.name == $volume)
+    | select((.status.robustness // "") == "healthy")
+  ' >/dev/null
+}
+
+longhorn_engine_count_for_node_from_json() {
+  local engines_json="$1"
+  local node="$2"
+
+  printf '%s' "$engines_json" | jq -r --arg node "$node" '
+    [ .items[]? | select((.spec.nodeID // "") == $node) ] | length
+  '
+}
+
+longhorn_replica_count_for_node_from_json() {
+  local replicas_json="$1"
+  local node="$2"
+
+  printf '%s' "$replicas_json" | jq -r --arg node "$node" '
+    [ .items[]? | select((.spec.nodeID // "") == $node) ] | length
+  '
+}
+
+cleanup_stale_longhorn_nodes_once() {
+  [[ "$AUTO_CLEAN_LONGHORN_STALE" == true ]] || return 0
+  [[ "$DRY_RUN" == false ]] || return 0
+  longhorn_available || return 0
+
+  local k8s_nodes_json volumes_json replicas_json nodes_json engines_json
+  k8s_nodes_json="$(kubectl_nodes_json)"
+  volumes_json="$(kubectl -n longhorn-system get volumes.longhorn.io -o json)"
+  replicas_json="$(kubectl -n longhorn-system get replicas.longhorn.io -o json)"
+  nodes_json="$(kubectl -n longhorn-system get nodes.longhorn.io -o json)"
+  engines_json="$(kubectl -n longhorn-system get engines.longhorn.io -o json)"
+
+  local lh_node
+  while IFS= read -r lh_node; do
+    [[ -n "$lh_node" ]] || continue
+
+    # Only clean Longhorn nodes whose Kubernetes node is gone.
+    if k8s_node_exists_from_json "$k8s_nodes_json" "$lh_node"; then
+      continue
+    fi
+
+    # A missing Kubernetes node with a Ready Longhorn node is unexpected. Leave it alone.
+    if longhorn_node_ready_from_json "$nodes_json" "$lh_node"; then
+      warn "Longhorn node $lh_node is Ready but the Kubernetes node is missing; leaving it untouched"
+      continue
+    fi
+
+    # Prevent any future scheduling to a stale Longhorn node. This can also make
+    # Longhorn remove the node by itself once no engines/replicas remain.
+    kubectl -n longhorn-system patch nodes.longhorn.io "$lh_node" \
+      --type=merge \
+      -p '{"spec":{"allowScheduling":false}}' >/dev/null 2>&1 || true
+
+    local replica_name volume_name replica_state replica_failed_at
+    while IFS=$'\t' read -r replica_name volume_name replica_state replica_failed_at; do
+      [[ -n "$replica_name" && -n "$volume_name" ]] || continue
+
+      if [[ "$replica_state" != "stopped" && -z "$replica_failed_at" ]]; then
+        log "Longhorn node $lh_node is stale but replica $replica_name is state=$replica_state; waiting"
+        continue
+      fi
+
+      if longhorn_volume_healthy_from_json "$volumes_json" "$volume_name"; then
+        log "Deleting stale Longhorn replica $replica_name on removed node $lh_node; volume $volume_name is healthy"
+        kubectl -n longhorn-system delete replicas.longhorn.io "$replica_name" --ignore-not-found=true
+      else
+        log "Longhorn node $lh_node is stale but volume $volume_name is not healthy yet; waiting before deleting replica $replica_name"
+      fi
+    done < <(
+      printf '%s' "$replicas_json" | jq -r --arg node "$lh_node" '
+        .items[]?
+        | select((.spec.nodeID // "") == $node)
+        | [
+            .metadata.name,
+            (.spec.volumeName // ""),
+            (.status.currentState // ""),
+            (.spec.failedAt // .status.failedAt // "")
+          ]
+        | @tsv
+      '
+    )
+
+    # Refresh after potential deletes.
+    replicas_json="$(kubectl -n longhorn-system get replicas.longhorn.io -o json)"
+    engines_json="$(kubectl -n longhorn-system get engines.longhorn.io -o json)"
+
+    local remaining_replicas engine_count
+    remaining_replicas="$(longhorn_replica_count_for_node_from_json "$replicas_json" "$lh_node")"
+    engine_count="$(longhorn_engine_count_for_node_from_json "$engines_json" "$lh_node")"
+
+    if [[ "$remaining_replicas" -eq 0 && "$engine_count" -eq 0 ]]; then
+      log "Removing stale Longhorn node $lh_node after Kubernetes node removal"
+      kubectl -n longhorn-system delete nodes.longhorn.io "$lh_node" --ignore-not-found=true || true
+    else
+      log "Longhorn node $lh_node is stale but still has replicas=$remaining_replicas engines=$engine_count; waiting"
+    fi
+  done < <(printf '%s' "$nodes_json" | jq -r '.items[]?.metadata.name')
+}
+
+longhorn_health_counts() {
+  local volumes_json="$1"
+  local replicas_json="$2"
+  local nodes_json="$3"
+  local k8s_nodes_json="$4"
+
+  local unhealthy_volumes failed_replicas unready_nodes
+  unhealthy_volumes="$(
+    printf '%s' "$volumes_json" | jq -r '
+      [ .items[]? | select((.status.robustness // "") != "healthy") ] | length
+    '
+  )"
+
+  failed_replicas="$(
+    printf '%s' "$replicas_json" | jq -r '
+      [
+        .items[]?
+        | select(
+            ((.spec.failedAt // .status.failedAt // "") != "")
+            or
+            ((.status.currentState // "") == "stopped")
+          )
+      ] | length
+    '
+  )"
+
+  unready_nodes="$(
+    jq -n \
+      --argjson lh "$nodes_json" \
+      --argjson k8s "$k8s_nodes_json" '
+      ($k8s.items | map(.metadata.name)) as $k8sNames
+      | [
+          $lh.items[]?
+          | .metadata.name as $name
+          | ([.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length) as $ready
+          | select($ready == 0)
+          | select(($k8sNames | index($name)) == null)
+        ] | length
+    '
+  )"
+
+  printf '%s\t%s\t%s\n' "$unhealthy_volumes" "$failed_replicas" "$unready_nodes"
+}
+
+print_longhorn_summary() {
+  kubectl -n longhorn-system get nodes.longhorn.io || true
+
+  kubectl -n longhorn-system get volumes.longhorn.io \
+    -o custom-columns='NAME:.metadata.name,STATE:.status.state,ROBUSTNESS:.status.robustness,NODE:.status.currentNodeID,REPLICAS:.spec.numberOfReplicas' || true
+
+  kubectl -n longhorn-system get replicas.longhorn.io \
+    -o custom-columns='NAME:.metadata.name,VOLUME:.spec.volumeName,NODE:.spec.nodeID,STATE:.status.currentState,FAILEDAT:.spec.failedAt' || true
+}
+
+longhorn_check_once() {
+  if ! longhorn_available; then
+    log "Longhorn CRDs or namespace not found; treating Longhorn as not installed"
+    return 0
+  fi
+
+  local volumes_json replicas_json nodes_json k8s_nodes_json counts unhealthy_volumes failed_replicas unready_nodes
+  volumes_json="$(kubectl -n longhorn-system get volumes.longhorn.io -o json)"
+  replicas_json="$(kubectl -n longhorn-system get replicas.longhorn.io -o json)"
+  nodes_json="$(kubectl -n longhorn-system get nodes.longhorn.io -o json)"
+  k8s_nodes_json="$(kubectl_nodes_json)"
+  counts="$(longhorn_health_counts "$volumes_json" "$replicas_json" "$nodes_json" "$k8s_nodes_json")"
+  IFS=$'\t' read -r unhealthy_volumes failed_replicas unready_nodes <<< "$counts"
+
+  if [[ "$unhealthy_volumes" -eq 0 && "$failed_replicas" -eq 0 && "$unready_nodes" -eq 0 ]]; then
+    log "Longhorn is healthy"
+    return 0
+  fi
+
+  warn "Longhorn is not healthy: unhealthyVolumes=$unhealthy_volumes failedOrStoppedReplicas=$failed_replicas unreadyLonghornNodes=$unready_nodes"
+  print_longhorn_summary
+  return 1
 }
 
 wait_for_longhorn_healthy() {
@@ -306,51 +524,19 @@ wait_for_longhorn_healthy() {
     return 0
   fi
 
-  local deadline=$((SECONDS + WAIT_SECONDS))
+  local deadline=$((SECONDS + LONGHORN_WAIT_SECONDS))
 
   while (( SECONDS < deadline )); do
-    local volumes_json replicas_json nodes_json
-    local unhealthy_volumes failed_replicas unready_nodes
+    cleanup_stale_longhorn_nodes_once || true
 
+    local volumes_json replicas_json nodes_json k8s_nodes_json counts
+    local unhealthy_volumes failed_replicas unready_nodes
     volumes_json="$(kubectl -n longhorn-system get volumes.longhorn.io -o json)"
     replicas_json="$(kubectl -n longhorn-system get replicas.longhorn.io -o json)"
     nodes_json="$(kubectl -n longhorn-system get nodes.longhorn.io -o json)"
-
-    unhealthy_volumes="$(
-      printf '%s' "$volumes_json" | jq -r '
-        [
-          .items[]?
-          | select((.status.robustness // "") != "healthy")
-        ] | length
-      '
-    )"
-
-    failed_replicas="$(
-      printf '%s' "$replicas_json" | jq -r '
-        [
-          .items[]?
-          | select(
-              ((.spec.failedAt // "") != "")
-              or
-              ((.status.currentState // "") == "stopped")
-            )
-        ] | length
-      '
-    )"
-
-    unready_nodes="$(
-      printf '%s' "$nodes_json" | jq -r '
-        [
-          .items[]?
-          | select(
-              [
-                .status.conditions[]?
-                | select(.type == "Ready" and .status == "True")
-              ] | length == 0
-            )
-        ] | length
-      '
-    )"
+    k8s_nodes_json="$(kubectl_nodes_json)"
+    counts="$(longhorn_health_counts "$volumes_json" "$replicas_json" "$nodes_json" "$k8s_nodes_json")"
+    IFS=$'\t' read -r unhealthy_volumes failed_replicas unready_nodes <<< "$counts"
 
     if [[ "$unhealthy_volumes" -eq 0 && "$failed_replicas" -eq 0 && "$unready_nodes" -eq 0 ]]; then
       log "Longhorn is healthy"
@@ -359,18 +545,12 @@ wait_for_longhorn_healthy() {
 
     printf 'Waiting: Longhorn unhealthyVolumes=%s failedOrStoppedReplicas=%s unreadyLonghornNodes=%s\n' \
       "$unhealthy_volumes" "$failed_replicas" "$unready_nodes"
-
-    kubectl -n longhorn-system get nodes.longhorn.io || true
-
-    kubectl -n longhorn-system get volumes.longhorn.io \
-      -o custom-columns='NAME:.metadata.name,STATE:.status.state,ROBUSTNESS:.status.robustness,NODE:.status.currentNodeID,REPLICAS:.spec.numberOfReplicas' || true
-
-    kubectl -n longhorn-system get replicas.longhorn.io \
-      -o custom-columns='NAME:.metadata.name,VOLUME:.spec.volumeName,NODE:.spec.nodeID,STATE:.status.currentState,FAILEDAT:.spec.failedAt' || true
-
-    sleep "$WAIT_INTERVAL_SECONDS"
+    print_longhorn_summary
+    sleep "$LONGHORN_WAIT_INTERVAL_SECONDS"
   done
 
+  warn "Timed out waiting for Longhorn health after ${LONGHORN_WAIT_SECONDS}s"
+  longhorn_check_once || true
   return 1
 }
 
@@ -406,8 +586,9 @@ log "Node pool: $NODE_POOL_ID"
 [[ -n "$TARGET_K8S_VERSION" ]] && log "Target Kubernetes version: $TARGET_K8S_VERSION"
 [[ -n "$TARGET_IMAGE_ID" ]] && log "Target node image id: $TARGET_IMAGE_ID"
 [[ "$SKIP_IMAGE_CHECK" == true ]] && warn "Image check disabled"
-[[ "$FORCE" == true ]] && warn "Force mode enabled: all ACTIVE nodes are candidates"
-[[ "$DRY_RUN" == true ]] && warn "Dry run enabled: no nodes will be deleted"
+[[ "$FORCE" == true ]] && warn "Force mode enabled: ACTIVE nodes are candidates"
+[[ "$DRY_RUN" == true ]] && warn "Dry run enabled: no nodes will be deleted and Longhorn will not be cleaned"
+log "Max replacements this run: $MAX_REPLACEMENTS"
 
 initial_pool_json="$(node_pool_json)"
 initial_nodes_json="$(kubectl_nodes_json)"
@@ -424,9 +605,14 @@ k8s_ready_count="$(ready_node_count_from_json "$initial_nodes_json")"
 [[ "$k8s_total_count" -eq "$expected_size" ]] || die "Unexpected Kubernetes node count: $k8s_total_count/$expected_size"
 [[ "$k8s_ready_count" -eq "$expected_size" ]] || die "Unexpected Ready Kubernetes node count: $k8s_ready_count/$expected_size"
 
-log "Checking Longhorn health before selecting replacement candidates"
-if ! wait_for_longhorn_healthy; then
-  die "Timed out waiting for Longhorn to become healthy before replacement"
+if [[ "$DRY_RUN" == true ]]; then
+  log "Checking Longhorn health once for dry-run"
+  longhorn_check_once || warn "A real run would wait for Longhorn to become healthy before replacing nodes"
+else
+  log "Checking Longhorn health before selecting replacement candidates"
+  if ! wait_for_longhorn_healthy; then
+    die "Timed out waiting for Longhorn to become healthy before replacement"
+  fi
 fi
 
 mapfile -t candidates < <(
@@ -463,13 +649,20 @@ if [[ "${#candidates[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-log "Nodes selected for replacement: ${#candidates[@]}"
+total_candidates="${#candidates[@]}"
+if [[ "$MAX_REPLACEMENTS" != "all" && "$total_candidates" -gt "$MAX_REPLACEMENTS" ]]; then
+  warn "Limiting replacements from $total_candidates candidates to $MAX_REPLACEMENTS. Re-run the script for the next node or use --max-replacements all explicitly."
+  candidates=("${candidates[@]:0:MAX_REPLACEMENTS}")
+fi
+
+log "Nodes selected for replacement this run: ${#candidates[@]} of $total_candidates candidates"
 printf '%s\n' "${candidates[@]}" | jq -r '"- OCI=\(.id) k8sVersion=\(.k8sVersion) image=\(.imageId) ociName=\(.ociName) k8sName=\(.k8sName)"'
 
 if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
+replaced_count=0
 for candidate in "${candidates[@]}"; do
   node_id="$(printf '%s' "$candidate" | jq -r '.id')"
 
@@ -494,7 +687,6 @@ for candidate in "${candidates[@]}"; do
   [[ "$fresh_k8s_total" -eq "$expected_size" ]] || die "Unexpected Kubernetes node count before replacing $node_id: $fresh_k8s_total/$expected_size"
   [[ "$fresh_k8s_ready" -eq "$expected_size" ]] || die "Unexpected Ready Kubernetes node count before replacing $node_id: $fresh_k8s_ready/$expected_size"
 
-  # If the old node no longer exists, it was already replaced in a previous run.
   fresh_node_json="$(printf '%s' "$fresh_pool_json" | jq -c --arg id "$node_id" '.data.nodes[]? | select(.id == $id)' | head -n1)"
   if [[ -z "$fresh_node_json" ]]; then
     log "Skipping $node_id: it is no longer in the node pool"
@@ -544,8 +736,9 @@ for candidate in "${candidates[@]}"; do
     die "Timed out waiting for Longhorn to become healthy after replacing $node_id"
   fi
 
+  replaced_count=$((replaced_count + 1))
   log "Replacement completed for $node_id"
 done
 
-log "Done. Current nodes:"
+log "Done. Replaced nodes in this run: $replaced_count"
 kubectl get nodes -o wide

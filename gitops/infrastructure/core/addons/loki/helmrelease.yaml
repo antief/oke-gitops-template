@@ -70,10 +70,10 @@ spec:
         size: 10Gi
       resources:
         requests:
-          cpu: 50m
+          cpu: 25m
           memory: 256Mi
         limits:
-          cpu: 500m
+          cpu: 300m
           memory: 768Mi
 
     # Disable other deployment modes explicitly for monolithic Loki.
@@ -109,7 +109,7 @@ spec:
       replicas: 1
       resources:
         requests:
-          cpu: 10m
+          cpu: 5m
           memory: 32Mi
         limits:
           cpu: 100m

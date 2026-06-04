@@ -30,7 +30,7 @@ spec:
       enabled: true
       resources:
         requests:
-          cpu: 25m
+          cpu: 10m
           memory: 96Mi
         limits:
           cpu: 200m
@@ -44,10 +44,10 @@ spec:
         retentionSize: 8GB
         resources:
           requests:
-            cpu: 50m
+            cpu: 25m
             memory: 512Mi
           limits:
-            cpu: 500m
+            cpu: 300m
             memory: 768Mi
         storageSpec:
           volumeClaimTemplate:
@@ -66,7 +66,7 @@ spec:
         storage: {}
         resources:
           requests:
-            cpu: 10m
+            cpu: 5m
             memory: 48Mi
           limits:
             cpu: 100m
@@ -81,7 +81,7 @@ spec:
         enabled: false
       resources:
         requests:
-          cpu: 25m
+          cpu: 20m
           memory: 128Mi
         limits:
           cpu: 200m
@@ -108,7 +108,7 @@ spec:
     prometheus-node-exporter:
       resources:
         requests:
-          cpu: 10m
+          cpu: 5m
           memory: 24Mi
         limits:
           cpu: 100m
